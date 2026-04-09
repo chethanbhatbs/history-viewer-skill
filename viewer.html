@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Claude Code — Conversations</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;display:flex;height:100vh}
+.sidebar{width:340px;background:#161b22;border-right:1px solid #30363d;display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-header{padding:16px;border-bottom:1px solid #30363d}
+.sidebar-header h1{font-size:16px;color:#58a6ff;margin-bottom:8px}
+.search-box{width:100%;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px}
+.search-box:focus{outline:none;border-color:#58a6ff}
+.filters{display:flex;gap:8px;margin-top:8px}
+.filter-btn{padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;font-size:11px;cursor:pointer}
+.filter-btn.active{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.session-list{flex:1;overflow-y:auto}
+.si{padding:12px 16px;border-bottom:1px solid #21262d;cursor:pointer}
+.si:hover{background:#1c2128}
+.si.active{background:#1f6feb22;border-left:3px solid #58a6ff}
+.si-date{font-size:11px;color:#58a6ff}
+.si-preview{font-size:12px;color:#8b949e;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si-meta{font-size:10px;color:#484f58;margin-top:4px;display:flex;justify-content:space-between}
+.mc{background:#21262d;padding:1px 6px;border-radius:10px}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.main-header{padding:16px 24px;border-bottom:1px solid #30363d;background:#161b22}
+.main-header h2{font-size:14px}
+.main-header .meta{font-size:11px;color:#484f58;margin-top:4px}
+.messages{flex:1;overflow-y:auto;padding:16px 24px}
+.mg{margin-bottom:8px;border-radius:8px;font-size:13px;line-height:1.6;word-break:break-word;border:1px solid #21262d}
+.mg.user{border-left:3px solid #58a6ff;background:#1f6feb08}
+.mg.assistant{border-left:3px solid #3fb950;background:#161b22}
+.mg-head{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;cursor:pointer;user-select:none}
+.mg-head:hover{background:#ffffff08}
+.mg .rl{font-size:11px;font-weight:700}
+.mg.user .rl{color:#58a6ff}
+.mg.assistant .rl{color:#3fb950}
+.mg .tm{font-size:10px;color:#484f58}
+.mg .preview{font-size:12px;color:#8b949e;margin-left:12px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 12px}
+.mg .arrow{color:#484f58;font-size:12px;transition:transform .2s}
+.mg.open .arrow{transform:rotate(90deg)}
+.mg .body{padding:8px 14px;border-top:1px solid #21262d;white-space:pre-wrap;display:none;max-height:600px;overflow-y:auto}
+.mg.open .body{display:block}
+.empty{text-align:center;padding:60px;color:#484f58}
+.stats{padding:12px 16px;border-top:1px solid #30363d;font-size:11px;color:#484f58}
+.expand-all{padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;font-size:11px;cursor:pointer;margin-left:8px}
+.expand-all:hover{background:#30363d;color:#c9d1d9}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="sidebar">
+<div class="sidebar-header"><h1>Claude Code History</h1>
+<input class="search-box" id="search" placeholder="Search conversations...">
+<div class="filters"><button class="filter-btn active" data-filter="all">All</button><button class="filter-btn" data-filter="week">Week</button><button class="filter-btn" data-filter="month">Month</button></div></div>
+<div class="session-list" id="sl"></div>
+<div class="stats" id="st"></div></div>
+<div class="main">
+<div class="main-header" id="mh"><h2>Claude Code Conversations</h2><div class="meta">Select a conversation</div></div>
+<div class="messages" id="ms"><div class="empty">Click a conversation to view</div></div></div>
+<script>
+var S=[], M={}, af='all';
+
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+function fmtDate(ts){
+  if(!ts)return'';
+  var d=new Date(typeof ts==='number'?ts:parseInt(ts));
+  if(isNaN(d.getTime()))return'';
+  return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+
+function fmtDateFull(ts){
+  if(!ts)return'';
+  var d=new Date(typeof ts==='number'?ts:parseInt(ts));
+  if(isNaN(d.getTime()))return'';
+  return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+
+function init(){
+  fetch('claude-history-data.json').then(function(r){return r.json()}).then(function(data){
+    S=data.s;M=data.m;
+    renderSessions();
+    var total=0;for(var k in M)total+=M[k].length;
+    document.getElementById('st').textContent=S.length+' conversations, '+total+' messages';
+    document.getElementById('ms').innerHTML='<div class="empty">Select a conversation from the left</div>';
+  }).catch(function(e){
+    document.getElementById('ms').innerHTML='<div class="empty">Error: '+e.message+'</div>';
+  });
+}
+
+function renderSessions(q){
+  var el=document.getElementById('sl');
+  var now=Date.now(),day=864e5;
+  var list=S.slice();
+  if(af==='week')list=list.filter(function(s){return now-s.lt<7*day});
+  if(af==='month')list=list.filter(function(s){return now-s.lt<30*day});
+  if(q){var ql=q.toLowerCase();list=list.filter(function(s){return s.fm.toLowerCase().indexOf(ql)>=0||s.p.toLowerCase().indexOf(ql)>=0})}
+  el.innerHTML=list.map(function(s){
+    return'<div class="si" data-id="'+s.id+'"><div class="si-date">'+fmtDateFull(s.ft)+'</div><div class="si-preview">'+esc(s.fm)+'</div><div class="si-meta"><span>'+(s.p.split('/').pop()||'home')+'</span><span class="mc">'+s.n+' msgs</span></div></div>';
+  }).join('');
+  el.querySelectorAll('.si').forEach(function(item){item.addEventListener('click',function(){loadSession(this.dataset.id)})});
+}
+
+function loadSession(id){
+  document.querySelectorAll('.si').forEach(function(x){x.classList.remove('active')});
+  var el=document.querySelector('[data-id="'+id+'"]');if(el)el.classList.add('active');
+  var s=S.find(function(x){return x.id===id});
+  var msgs=M[id]||[];
+  document.getElementById('mh').innerHTML='<h2>'+esc(s.fm.substring(0,80))+'</h2><div class="meta">'+fmtDateFull(s.ft)+' &middot; '+msgs.length+' messages<button class="expand-all" onclick="toggleAll()">Expand All</button><button class="expand-all" onclick="collapseAll()">Collapse All</button></div>';
+  var html='';
+  for(var i=0;i<msgs.length;i++){
+    var m=msgs[i];
+    var role=m.r==='user'?'You':'Claude';
+    var preview=esc((m.t||'').substring(0,100));
+    var time=fmtDate(m.ts);
+    html+='<div class="mg '+m.r+'" data-idx="'+i+'"><div class="mg-head" onclick="toggleMsg(this)"><span class="rl">'+role+'</span><span class="preview">'+preview+'</span><span class="tm">'+time+'</span><span class="arrow">&#9654;</span></div><div class="body">'+esc(m.t).replace(/\n/g,'<br>')+'</div></div>';
+  }
+  document.getElementById('ms').innerHTML=html;
+  document.getElementById('ms').scrollTop=0;
+}
+
+function toggleMsg(head){head.parentElement.classList.toggle('open')}
+function toggleAll(){document.querySelectorAll('.mg').forEach(function(m){m.classList.add('open')})}
+function collapseAll(){document.querySelectorAll('.mg').forEach(function(m){m.classList.remove('open')})}
+
+document.getElementById('search').addEventListener('input',function(e){renderSessions(e.target.value)});
+document.querySelectorAll('.filter-btn').forEach(function(b){b.addEventListener('click',function(){document.querySelectorAll('.filter-btn').forEach(function(x){x.classList.remove('active')});b.classList.add('active');af=b.dataset.filter;renderSessions(document.getElementById('search').value)})});
+init();
+</script>
+</body>
+</html>
